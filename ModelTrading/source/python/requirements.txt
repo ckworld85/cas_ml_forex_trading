@@ -1,0 +1,38 @@
+--index-url https://pypi.org/simple
+--extra-index-url https://download.pytorch.org/whl/cpu
+
+numpy==1.26.4          ## run
+pandas==2.2.2          ## run
+ta==0.10.2             ## run
+pyyaml                 ## run
+stable-baselines3      ## build
+torch==2.2.0+cpu       ## build
+scikit-learn==1.4.2    ## build
+joblib==1.4.2          ## build
+onnx==1.16.0           ## build
+onnxruntime==1.18.0    ## build
+onnxmltools==1.12.0    ## build
+onnxconverter-common==1.14.0  ## build
+matplotlib==3.8.4      ## build
+reportlab==4.1.0       ## build
+xgboost==2.0.3         ## build
+pyarrow==15.0.2        ## build
+fastparquet==2024.5.0  ## build
+mysql-connector-python==8.3.0  ## build
+shap==0.44.0           ## build
+lightgbm==4.6.0        ## build
+hmmlearn==0.3.3        ## build   # Gaussian HMM for the ML regime model (features/regime_model.py)
+requests>=2.31.0       ## run
+yfinance>=0.2.40       ## run
+# TimesFM 2.5 (>=2.0) is published only on GitHub, not PyPI — install from source:
+#   pip install "git+https://github.com/google-research/timesfm.git"
+# Uses the TimesFM_2p5_200M_torch API (torch backend) — see features/timesfm_features.py
+timesfm @ git+https://github.com/google-research/timesfm.git   ## build
+wandb                   ## build   # W&B experiment tracking (opt-in --wandb; utils/experiment_tracking.py)
+wandb-workspaces        ## build   # W&B report authoring (analytics/wandb_report.py)
+weave                   ## build   # W&B Weave evaluations (analytics/weave_eval.py)
+# protobuf must stay <7: protobuf 7.x rejects Python bools in int fields, which breaks
+# onnxmltools.convert_xgboost (onnx.helper.make_attribute -> "Expected an int, got a boolean").
+# wandb needs >=5. onnxconverter-common 1.14.0 declares protobuf==3.20.2 (over-strict exact
+# pin); 6.x is runtime-verified against the ONNX export tests. Do NOT let pip upgrade this.
+protobuf>=5,<7          ## build

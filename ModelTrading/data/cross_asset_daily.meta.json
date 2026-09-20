@@ -1,0 +1,98 @@
+{
+  "symbol": "EURUSD",
+  "exclude_self": true,
+  "symbols_used": [
+    "GBPUSD",
+    "AUDUSD",
+    "NZDUSD",
+    "USDJPY",
+    "USDCHF",
+    "USDCAD",
+    "EURJPY",
+    "EURGBP",
+    "AUDJPY"
+  ],
+  "currencies": [
+    "AUD",
+    "CAD",
+    "CHF",
+    "EUR",
+    "GBP",
+    "JPY",
+    "NZD",
+    "USD"
+  ],
+  "lookbacks": [
+    60,
+    250
+  ],
+  "resid_rms_mean": 0.00010315338496403045,
+  "n_dates": 4977,
+  "first_date": "2007-01-02",
+  "last_date": "2026-04-17",
+  "per_symbol": {
+    "EURUSD": {
+      "n": 5555,
+      "start": "2005-01-03",
+      "end": "2026-04-17"
+    },
+    "GBPUSD": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "AUDUSD": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "NZDUSD": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "USDJPY": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "USDCHF": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "USDCAD": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "EURJPY": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "EURGBP": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    },
+    "AUDJPY": {
+      "n": 4978,
+      "start": "2007-01-01",
+      "end": "2026-04-17"
+    }
+  },
+  "features": [
+    "daily_ccy_rank_spread_60",
+    "daily_ccy_spread_z_60",
+    "daily_ccy_eur_rank_60",
+    "daily_ccy_usd_rank_60",
+    "daily_ccy_usd_breadth_60",
+    "daily_ccy_rank_spread_250",
+    "daily_ccy_spread_z_250",
+    "daily_ccy_eur_rank_250",
+    "daily_ccy_usd_rank_250",
+    "daily_ccy_usd_breadth_250",
+    "daily_ccy_dispersion_pct"
+  ]
+}

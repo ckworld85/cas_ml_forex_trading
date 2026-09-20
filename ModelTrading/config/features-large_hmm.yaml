@@ -1,0 +1,915 @@
+# Feature Configuration - FULL SCREENING CATALOGUE for label mode `trend_only`
+# =============================================================================
+# NOT A TRAINING CANDIDATE. This enables (nearly) every implemented feature —
+# 65 fast / 134 slow — INCLUDING the label-leak test features `m15_y`/`daily_y`
+# (= long minus short label). Any model trained on it scores AUC ~0.98 by
+# construction: the label is among its inputs. NEVER stage, deploy, or quote
+# its metrics as model quality.
+# Purpose: source matrix for feature screens. The 2026-09-06 within-TREND
+# label-association screen ran on this catalogue (run `features-full-trend_only`)
+# and produced the re-selected features-trend_only.yaml (at the time named
+# features-pruned-trend_only.yaml). The screen method is reproducible from the
+# run's X_{model}/label parquets.
+#
+# Feature Configuration — flat per-feature schema
+# =============================================================================
+# Single source of truth. Each entry under `features:` is one feature:
+#
+#   - name:     feature name with timeframe prefix (m15_/4hours_/daily_)
+#   - role:     model  -> a model input
+#               helper -> computed intermediate (not a model input)
+#   - models:   which trained models this feature feeds (role: model only).
+#               valid: long_fast, short_fast, long_slow, short_slow
+#   - enabled:  default true. enabled: true fully deactivates the feature
+#               (replaces the old `##` line-commenting); excluded from every list.
+#   - external: default false. true = sourced from an external CSV, not OHLC.
+#
+# Training cadence is encoded in the model name: *_fast train on M15 bars,
+# *_slow train on 4h-resampled bars. Each model gets its OWN selected
+# feature set, scaler and ONNX input shape.
+#
+# STATIONARITY LEGEND (model features):
+#   STATIONARY     — bounded / normalized vs own history; safe across regimes
+#   PARTIAL        — normalized vs price but drifts with volatility regime
+#   NON-STATIONARY — raw price units or unbounded; drifts over time
+# =============================================================================
+
+features:
+
+  # ===========================================================================
+  # M15 TIMEFRAME — feeds long_fast / short_fast
+  # ===========================================================================
+
+  # --- raw OHLC (inert: neither helper nor model input) ---
+  - {name: m15_o, role: helper, enabled: false}   # NON-STATIONARY raw price
+  - {name: m15_h, role: helper, enabled: false}
+  - {name: m15_l, role: helper, enabled: false}
+  - {name: m15_c, role: helper, enabled: false}
+
+  # LABEL-LEAK TEST ONLY (= long_slow - short_slow). Never deploy live.
+  - {name: m15_y, role: model, enabled: false, models: [long_fast, short_fast]}
+
+  # --- helpers ---
+  - {name: m15_mid, role: helper}            # NON-STATIONARY: raw price level
+  - {name: m15_bb_upper, role: helper}       # NON-STATIONARY
+  - {name: m15_bb_middle, role: helper}      # NON-STATIONARY (SMA-20)
+  - {name: m15_bb_lower, role: helper}       # NON-STATIONARY
+  - {name: m15_sma_80, role: helper}         # NON-STATIONARY: raw price level
+  - {name: m15_ema_50, role: helper, enabled: true}
+  - {name: m15_ichimoku_conv, role: helper}  # NON-STATIONARY
+  - {name: m15_ichimoku_base, role: helper}  # NON-STATIONARY
+  - {name: m15_ichimoku_a, role: helper}     # NON-STATIONARY
+  - {name: m15_ichimoku_b, role: helper}     # NON-STATIONARY
+  - {name: m15_macd, role: helper}           # NON-STATIONARY: raw price units
+  - {name: m15_macd_signal, role: helper}    # NON-STATIONARY
+  - {name: m15_macd_diff, role: helper}      # NON-STATIONARY
+  - {name: m15_adx_base, role: helper}       # STATIONARY [0,100]
+  - {name: m15_price_efficiency_base, role: helper}  # STATIONARY [0,1]
+
+  # --- volatility ---
+  - {name: m15_bb_width, role: model, enabled: true, models: [long_fast, short_fast]}     # PARTIAL - Inconclusive ADF p 0.0000   KPSS p 0.0100   LB p 0.0000  CV 0.169
+  - {name: m15_bb_squeeze, role: model, enabled: true, models: [long_fast, short_fast]}   # PARTIAL - Inconclusive ADF p 0.0000   KPSS p 0.0100   LB p 0.0000  CV 0.183 
+  - {name: m15_bb_percent, role: model, enabled: true, models: [long_fast, short_fast]}   # STATIONARY [0,1]
+  - {name: m15_bb_position, role: model, enabled: true, models: [long_fast, short_fast]}  # STATIONARY [0,1] (dup)
+  - {name: m15_bb_deviation, role: model, enabled: true, models: [long_fast, short_fast]}  # STATIONARY: (close-bb_mid)/atr — signed stretch from mean (exhaustion when large in trend dir)
+  - {name: m15_atr_volatility_ratio, role: model, enabled: true, models: [long_fast, short_fast]}  # PARTIAL - Inconclusive ADF p 0.0000   KPSS p 0.0100   LB p 0.0000  CV 0.275
+
+  # --- price position (pruned: ~0 SHAP) ---
+  - {name: m15_price_vs_sma_80, role: model, enabled: true, models: [long_fast, short_fast]}  # PARTIAL
+
+  # --- market position (Ichimoku-derived) ---
+  - {name: m15_price_above_cloud, role: model, enabled: true, models: [long_fast, short_fast]}  # STATIONARY binary
+  - {name: m15_cloud_thickness, role: model, enabled: true, models: [long_fast, short_fast]}    # Inconclusive ADF p 0.0000   KPSS p 0.0100   LB p 0.0000  CV 0.118
+  - {name: m15_tenkan_kijun_diff, role: model, enabled: true, models: [long_fast, short_fast]}  # STATIONARY ATR-norm
+  - {name: m15_cloud_color, role: model, enabled: true, models: [long_fast, short_fast]}        # STATIONARY binary
+  - {name: m15_distance_to_cloud, role: model, models: [long_fast, short_fast]}   # STATIONARY ATR-norm extension beyond cloud (exhaustion when large) - Inconclusive ADF p 0.0000   KPSS p 0.0100   LB p 0.0000  CV 0.054
+
+  # --- oscillators ---
+  - {name: m15_macd_atr, role: model, enabled: true, models: [long_fast, short_fast]}         # STATIONARY: macd/atr
+  - {name: m15_rsi, role: model, enabled: true, models: [long_fast, short_fast]}              # STATIONARY [0,100]
+  - {name: m15_stoch_k, role: model, enabled: true, models: [long_fast, short_fast]}          # STATIONARY [0,100]
+  - {name: m15_stoch_d, role: model, enabled: true, models: [long_fast, short_fast]}   # STATIONARY [0,100]
+  - {name: m15_macd_signal_atr, role: model, enabled: true, models: [long_fast, short_fast]}  # STATIONARY: macd_signal/atr
+  - {name: m15_macd_diff_atr, role: model, enabled: true, models: [long_fast, short_fast]}  # STATIONARY
+
+  # --- regime ---
+  - {name: m15_adx, role: model, enabled: false, models: [long_fast, short_fast]}               # STATIONARY [0,100]
+  - {name: m15_price_efficiency, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,1]
+  - {name: m15_volatility_percentile, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,100]
+
+  # --- trend quality (continuation vs exhaustion) ---
+  - {name: m15_slope_efficiency, role: model, enabled: true, models: [long_fast, short_fast]}      # STATIONARY R^2*sign over 12 bars — clean-trend continuation signal
+  - {name: m15_pullback_20, role: model, enabled: false, models: [long_fast, short_fast]}           # STATIONARY ATR-norm pullback depth in trend dir (shallow = continuation entry)
+  - {name: m15_momentum_accel_12, role: model, enabled: true, models: [long_fast, short_fast]}     # STATIONARY ATR-norm Δ in 12-bar return (<0 = momentum rolling over)
+
+  # --- bar structure ---
+  - {name: m15_close_vs_bar_range, role: model, enabled: true, models: [long_fast, short_fast]}    # Inconclusive ADF p 0.0000   KPSS p 0.0100   LB p 0.0000  CV 0.008
+  - {name: m15_bar_body_ratio, role: model, enabled: true, models: [long_fast, short_fast]}        # Inconclusive ADF p 0.0000   KPSS p 0.0100   LB p 0.0000  CV 0.007
+  - {name: m15_return_3_atr, role: model, enabled: true, models: [long_fast, short_fast]}          # STATIONARY
+  - {name: m15_momentum_consistency_5, role: model, enabled: true, models: [long_fast, short_fast]}                # STATIONARY [0,1]
+
+  # --- tick volume (TRAINING ONLY: the live payload from Java carries no volume) ---
+  # Dukascopy ships tick volume (price updates/bar), not traded volume. Its level
+  # drifts ~9x across 2005-2026 with the feed, so only relative measures are used —
+  # never raw levels or cumulative sums (OBV/AccDist are non-stationary here).
+  # Windows stay <= 1 week so normalisation never spans a feed change.
+  # Measured max |corr| against the existing m15 feature set (150k bars) is noted
+  # per line — the three orthogonal ones are the reason to try volume at all.
+  - {name: m15_volume_percentile_96, role: model, enabled: false, models: [long_fast, short_fast]}       # STATIONARY [0,100] relative activity | corr 0.21 ORTHOGONAL
+  - {name: m15_effort_result_96, role: model, enabled: false, models: [long_fast, short_fast]}           # STATIONARY log(vol_ratio)-log(range/atr): absorption vs frictionless | corr 0.18 ORTHOGONAL
+  - {name: m15_vol_price_divergence_96, role: model, enabled: false, models: [long_fast, short_fast]}    # STATIONARY [-1,1] is the move backed by participation | corr 0.18 ORTHOGONAL
+  # The two below largely restate features the model already has — enable only to verify.
+  - {name: m15_cmf_20, role: model, enabled: false, models: [long_fast, short_fast]}                     # STATIONARY [-1,1] Chaikin Money Flow | corr 0.61 vs m15_rsi
+  - {name: m15_vwap_deviation_96, role: model, enabled: false, models: [long_fast, short_fast]}          # STATIONARY signed VWAP distance in window-ATR units | corr 0.85 vs m15_macd_atr
+
+
+  # --- paper-reported features (2026-08-29 candidate screen) ---
+  # Seven features reported as top importance in an external paper. Added disabled; the
+  # screening protocol is redundancy check -> information_audit -> only then a model arm.
+  # IMPORTANCE IS NOT OOS EVIDENCE: measured the same day, rate_diff_10y_chg20_z250 took
+  # 3.15% of XGBoost gain and then returned -33.4 EUR/trade over 36 walk-forward runs.
+  # bb_pband from the paper already exists here as {tf}_bb_percent.
+  # Raw hl_range / oc_range / log_return are NON-STATIONARY in price units (EUR/USD ran
+  # 0.95-1.60 with ~3x volatility drift), so they enter ATR-normalised.
+  - {name: m15_adx_pos, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,100] +DI, the direction ADX discards
+  - {name: m15_adx_neg, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,100] -DI
+  - {name: m15_cci, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY self-normalised by mean deviation
+  - {name: m15_channel_pos_10, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,1] Donchian position
+  - {name: m15_hl_range_atr, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY bar range / ATR
+  - {name: m15_oc_range_atr, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY signed (close-open) / ATR
+  - {name: m15_log_return_atr_1, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY 1-bar log return / ATR
+
+  # --- session ---
+  - {name: m15_is_london_session, role: model, enabled: false, models: [long_fast, short_fast]}              # STATIONARY binary 08-16 UTC
+  - {name: m15_is_ny_session, role: model, enabled: false, models: [long_fast, short_fast]}       # STATIONARY binary
+  - {name: m15_is_session_overlap, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY binary
+  - {name: m15_hour_sin, role: model, enabled: true, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1] intraday seasonality
+  - {name: m15_hour_cos, role: model, enabled: true, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1]
+
+  # --- scheduled central-bank calendar (timestamp-derived — features/calendar_events.py) ---
+  # Calendar days until the next scheduled rate decision: 0 = today, 1 = tomorrow.
+  # Source: data/fxstreet_calendar_event_list.csv (coverage 2007-08..2026-12; NaN
+  # outside coverage rather than a fabricated countdown). FED event name:
+  # "Fed Interest Rate Decision". EZB: "ECB Main Refinancing Operations Rate" —
+  # NOT "ECB Press Conference", that is the presser 45 min after the decision and
+  # does not exist for every meeting (133 vs 186 entries).
+  # NO shift(1): the meeting calendar is published over a year in advance, so the
+  # bar's own date is legitimately usable; a shift would make the countdown wrong
+  # by one day. Deliberately M15-level, NOT daily_: daily rows reach M15 bars only
+  # after the +24h close-time shift, so a daily_ countdown would read 1 on the
+  # decision day and 0 the day AFTER — the m15 variant is exact intraday.
+  # If enabled, calendar_events.py + the fxstreet CSV become live runtime
+  # artefacts (stage_jforex.ps1 allowlists must include both).
+  - {name: m15_until_fed_ir_decision, role: model, enabled: true, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY sawtooth 0..~56
+  - {name: m15_until_ezb_ir_decision, role: model, enabled: true, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY sawtooth 0..~56  
+
+  # --- TimesFM forecast (M15, experimental — disabled until Java sends ≥512 bars) ---
+  # Horizon is encoded in the feature-name suffix (m15 = 144 M15 bars = 36h).
+  - {name: m15_tfm_mean_144,   role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY cumulative log-return forecast
+  - {name: m15_tfm_q10_144,    role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY lower bound
+  - {name: m15_tfm_q90_144,    role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY upper bound
+  - {name: m15_tfm_spread_144, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY uncertainty
+
+  # ===========================================================================
+  # 4 HOURS TIMEFRAME — feeds long_slow / short_slow
+  # (price_efficiency also feeds long_fast/short_fast as macro context)
+  # ===========================================================================
+
+  # --- raw OHLC (inert) ---
+  - {name: 4hours_o, role: helper, enabled: false}
+  - {name: 4hours_h, role: helper, enabled: false}
+  - {name: 4hours_l, role: helper, enabled: false}
+  - {name: 4hours_c, role: helper, enabled: false}
+
+  # --- helpers ---
+  - {name: 4hours_mid, role: helper}
+  - {name: 4hours_bb_upper, role: helper}
+  - {name: 4hours_bb_middle, role: helper}
+  - {name: 4hours_bb_lower, role: helper}
+  - {name: 4hours_sma_30, role: helper}
+  - {name: 4hours_sma_80, role: helper}
+  - {name: 4hours_ema_50, role: helper, enabled: true}
+  - {name: 4hours_ichimoku_conv, role: helper}
+  - {name: 4hours_ichimoku_base, role: helper}
+  - {name: 4hours_ichimoku_a, role: helper}
+  - {name: 4hours_ichimoku_b, role: helper}
+  - {name: 4hours_macd, role: helper}
+  - {name: 4hours_macd_signal, role: helper}
+  - {name: 4hours_macd_diff, role: helper}
+  - {name: 4hours_adx_base, role: helper}
+  - {name: 4hours_price_efficiency_base, role: helper}
+
+  # --- volatility ---
+  - {name: 4hours_bb_width, role: model, enabled: true, models: [long_slow, short_slow]}      # PARTIAL
+  - {name: 4hours_bb_percent, role: model, enabled: true, models: [long_slow, short_slow]}    # STATIONARY [0,1]
+  - {name: 4hours_bb_position, role: model, enabled: true, models: [long_slow, short_slow]}   # STATIONARY [0,1]
+  - {name: 4hours_bb_squeeze, role: model, enabled: false, models: [long_slow, short_slow]}    # PARTIAL
+  - {name: 4hours_bb_deviation, role: model, enabled: true, models: [long_slow, short_slow]}                  # STATIONARY ATR-norm
+  - {name: 4hours_abs_bb_deviation, role: model, enabled: true, models: [long_slow, short_slow]}  # STATIONARY
+  - {name: 4hours_atr_volatility_ratio, role: model, enabled: false, models: [long_slow, short_slow]}  # PARTIAL
+
+  # --- price position ---
+  - {name: 4hours_abs_price_vs_sma_80, role: model, enabled: true, models: [long_slow, short_slow]}
+  - {name: 4hours_price_vs_sma_80, role: model, enabled: true, models: [long_slow, short_slow]}  # PARTIAL
+  - {name: 4hours_sma_30_cross_over_sma_80, role: model, enabled: true, models: [long_slow, short_slow]}         # STATIONARY ATR-norm
+  - {name: 4hours_sma_slope_30, role: model, enabled: true, models: [long_slow, short_slow]}     # STATIONARY
+  - {name: 4hours_sma_slope_80, role: model, enabled: false, models: [long_slow, short_slow]}                     # STATIONARY
+
+  # --- market position ---
+  - {name: 4hours_cloud_thickness, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY ATR-norm
+  - {name: 4hours_tenkan_kijun_diff, role: model, enabled: true, models: [long_slow, short_slow]}                 # STATIONARY ATR-norm
+  - {name: 4hours_price_above_cloud, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY binary
+  - {name: 4hours_cloud_color, role: model, enabled: true, models: [long_slow, short_slow]}       # STATIONARY binary
+  - {name: 4hours_distance_to_cloud, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY ATR-norm extension beyond cloud (exhaustion when large)
+
+  # --- oscillators ---
+  - {name: 4hours_rsi, role: model, enabled: true, models: [long_slow, short_slow]}        # STATIONARY [0,100]
+  - {name: 4hours_stoch_k, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY [0,100]
+  - {name: 4hours_stoch_d, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY [0,100]
+  - {name: 4hours_macd_atr, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY: macd/atr
+  - {name: 4hours_abs_macd_atr, role: model, enabled: true, models: [long_slow, short_slow]}      # STATIONARY
+  - {name: 4hours_macd_signal_atr, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY
+  - {name: 4hours_macd_diff_atr, role: model, enabled: false, models: [long_slow, short_slow]}     # STATIONARY
+
+  # --- momentum ---
+  - {name: 4hours_momentum_short, role: model, enabled: false, models: [long_slow, short_slow]}
+  - {name: 4hours_momentum_medium, role: model, enabled: false, models: [long_slow, short_slow]}
+
+  # --- regime --- (price_efficiency also feeds fast models as macro context)
+  - {name: 4hours_adx, role: model, enabled: false, models: [long_slow, short_slow]}            # STATIONARY [0,100]
+  - {name: 4hours_adx_percentile, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY [0,100]
+  - {name: 4hours_price_efficiency, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [0,1]
+  - {name: 4hours_volatility_percentile, role: model, enabled: false, models: [long_slow, short_slow]}    # STATIONARY [0,100]
+
+  # --- trend quality (continuation vs exhaustion) ---
+  - {name: 4hours_slope_efficiency, role: model, enabled: true, models: [long_slow, short_slow]}   # STATIONARY R^2*sign over 12 bars — clean-trend continuation signal
+  - {name: 4hours_pullback_20, role: model, enabled: false, models: [long_slow, short_slow]}        # STATIONARY ATR-norm pullback depth in trend dir (shallow = continuation entry)
+  - {name: 4hours_momentum_accel_6, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY ATR-norm Δ in 6-bar return (<0 = momentum rolling over)
+
+  # --- calendar / session (timestamp-derived) ---
+  - {name: 4hours_is_london_session, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY binary
+  - {name: 4hours_is_ny_session, role: model, enabled: false, models: [long_slow, short_slow]}      # STATIONARY binary
+  - {name: 4hours_is_asia_session, role: model, enabled: false, models: [long_slow, short_slow]}                    # STATIONARY binary 00-08 UTC
+  - {name: 4hours_is_session_overlap, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY binary
+
+  # --- TimesFM forecast (H4 support → slow models) ---
+  # Horizon is encoded in the feature-name suffix (4hours = 9 H4 bars ≈ 144 M15 bars).
+  - {name: 4hours_tfm_mean_9,   role: model, enabled: false, models: [long_slow, short_slow]}                          # STATIONARY cumulative log-return forecast
+  - {name: 4hours_tfm_spread_9, role: model, enabled: false, models: [long_slow, short_slow]}                          # STATIONARY uncertainty
+  - {name: 4hours_tfm_q10_9,    role: model, enabled: false, models: [long_slow, short_slow]}          # STATIONARY lower bound
+  - {name: 4hours_tfm_q90_9,    role: model, enabled: false, models: [long_slow, short_slow]}          # STATIONARY upper bound
+
+  # ===========================================================================
+  # DAILY TIMEFRAME — feeds long_slow / short_slow
+  # (adx_percentile + price_efficiency also feed long_fast/short_fast as context)
+  # ===========================================================================
+
+  # --- raw OHLC (inert) ---
+  - {name: daily_o, role: helper, enabled: false}
+  - {name: daily_h, role: helper, enabled: false}
+  - {name: daily_l, role: helper, enabled: false}
+  - {name: daily_c, role: helper, enabled: false}
+
+  # LABEL-LEAK TEST ONLY (= long_slow - short_slow). Never deploy live.
+  - {name: daily_y, role: model, enabled: false, models: [long_slow, short_slow]}
+
+  # --- helpers ---
+  - {name: daily_mid, role: helper}
+  - {name: daily_bb_upper, role: helper}
+  - {name: daily_bb_middle, role: helper}
+  - {name: daily_bb_lower, role: helper}
+  # ATR helpers need no declaration: indicators.py creates each ATR on demand
+  # with the window matched to the feature it normalises (SMA(80) -> ATR(80),
+  # crossovers use the larger window; see the ATR window notes in indicators.py).
+  - {name: daily_sma_3, role: helper}
+  - {name: daily_sma_7, role: helper}
+  - {name: daily_sma_14, role: helper}
+  - {name: daily_sma_30, role: helper}
+  - {name: daily_sma_80, role: helper}
+  - {name: daily_sma_200, role: helper}
+  - {name: daily_ema_50, role: helper, enabled: true}
+  - {name: daily_ichimoku_conv, role: helper}
+  - {name: daily_ichimoku_base, role: helper}
+  - {name: daily_ichimoku_a, role: helper}
+  - {name: daily_ichimoku_b, role: helper}
+  - {name: daily_macd, role: helper}
+  - {name: daily_macd_signal, role: helper}
+  - {name: daily_macd_diff, role: helper}
+  - {name: daily_adx_base, role: helper}
+  - {name: daily_price_efficiency_base, role: helper}
+
+  # --- volatility ---
+  - {name: daily_atr_pips, role: model, enabled: true, models: [long_fast, short_fast]}  #  Inconclusive ADF p 0.0003   KPSS p 0.0100   LB p 0.0000  CV 0.359
+  - {name: daily_bb_width, role: model, enabled: false, models: [long_slow, short_slow]}    # PARTIAL
+  - {name: daily_bb_percent, role: model, enabled: false, models: [long_slow, short_slow]}                  # STATIONARY [0,1]
+  - {name: daily_bb_position, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY [0,1]
+  - {name: daily_bb_squeeze, role: model, enabled: false, models: [long_slow, short_slow]}  # PARTIAL
+  - {name: daily_bb_deviation, role: model, enabled: false, models: [long_slow, short_slow]}                # STATIONARY ATR-norm signed
+  - {name: daily_abs_bb_deviation, role: model, enabled: true, models: [long_slow, short_slow]}            # STATIONARY ATR-norm abs
+  - {name: daily_atr_volatility_ratio, role: model, enabled: false, models: [long_slow, short_slow]}  # PARTIAL
+
+  # --- price position ---
+  - {name: daily_abs_price_vs_sma_80, role: model, enabled: true, models: [long_slow, short_slow]}
+  - {name: daily_price_vs_sma_80, role: model, enabled: true, models: [long_slow, short_slow]}  # PARTIAL - Inconclusive ADF p 0.0766   KPSS p 0.0915   LB p 0.0000  CV 0.406
+  - {name: daily_sma_30_cross_over_sma_80, role: model, enabled: false, models: [long_slow, short_slow]}         # STATIONARY ATR-norm
+  - {name: daily_signed_price_vs_sma_80, role: model, enabled: true, models: [long_slow, short_slow]}  # Inconclusive ADF p 0.0766   KPSS p 0.0915   LB p 0.0000  CV 0.406
+  - {name: daily_signed_price_vs_sma_14, role: model, enabled: true, models: [long_slow, short_slow]}  # Inconclusive ADF p 0.0563   KPSS p 0.1000   LB p 0.0000  CV 0.328
+  - {name: daily_sma_slope_30, role: model, enabled: true, models: [long_slow, short_slow]}     # STATIONARY
+  - {name: daily_sma_slope_80, role: model, enabled: true, models: [long_fast, short_fast]}                     # STATIONARY
+
+  # --- market position ---
+  - {name: daily_cloud_thickness, role: model, enabled: true, models: [long_slow, short_slow]}                  # STATIONARY ATR-norm
+  - {name: daily_tenkan_kijun_diff, role: model, enabled: true, models: [long_slow, short_slow]}                # STATIONARY ATR-norm
+  - {name: daily_price_above_cloud, role: model, enabled: true, models: [long_slow, short_slow]} # STATIONARY binary
+  - {name: daily_cloud_color, role: model, enabled: true, models: [long_slow, short_slow]}       # STATIONARY binary
+  - {name: daily_distance_to_cloud, role: model, enabled: true, models: [long_slow, short_slow]}                 # STATIONARY ATR-norm
+
+  # --- oscillators ---
+  - {name: daily_rsi, role: model, enabled: false, models: [long_slow, short_slow]}        # STATIONARY [0,100]
+  - {name: daily_stoch_k, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY [0,100]
+  - {name: daily_stoch_d, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY [0,100]
+  - {name: daily_macd_atr, role: model, enabled: true, models: [long_slow, short_slow]}   # STATIONARY: macd/atr
+  - {name: daily_macd_signal_atr, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY
+  - {name: daily_macd_diff_atr, role: model, enabled: false, models: [long_slow, short_slow]}     # STATIONARY
+
+  # --- regime --- (adx_percentile + price_efficiency also feed fast models)
+  - {name: daily_regime_trend, role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}          # STATIONARY [0,1]
+  - {name: daily_regime_range, role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}          # STATIONARY [0,1]
+  - {name: daily_adx, role: model, enabled: false, models: [long_slow, short_slow]}                   # STATIONARY [0,100]
+  - {name: daily_adx_percentile, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}      # STATIONARY [0,100]
+  - {name: daily_price_efficiency, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}    # STATIONARY [0,1]
+  - {name: daily_volatility_percentile, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY [0,100]
+
+  # --- trend quality ---
+  - {name: daily_slope_efficiency, role: model, enabled: true, models: [long_slow, short_slow]}     # STATIONARY R^2*sign
+  - {name: daily_pullback_20, role: model, enabled: false, models: [long_slow, short_slow]}                          # STATIONARY ATR-norm
+  - {name: daily_pullback_50, role: model, enabled: true, models: [long_slow, short_slow]}
+  - {name: daily_meta_pullback_score, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY
+  - {name: daily_bb_edge_impact_score, role: model, enabled: true, models: [long_slow, short_slow]} # STATIONARY
+
+  # --- long-horizon momentum (TS momentum, Moskowitz/Ooi/Pedersen) ---
+  - {name: daily_momentum_long, role: model, enabled: false, models: [long_slow, short_slow]}   # STATIONARY 20d (~1 month) return
+  - {name: daily_momentum_xlong, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY 60d (~3 month) return
+
+  # --- calendar / seasonality (pruned) ---
+  - {name: daily_day_of_week, role: model, enabled: false, models: [long_slow, short_slow]}      # STATIONARY [0,1]
+  - {name: daily_month_sin, role: model, enabled: true, models: [long_slow, short_slow]}        # Inconclusive ADF p 0.5047   KPSS p 0.1000   LB p 0.0000  CV 0.141  
+  - {name: daily_month_cos, role: model, enabled: true, models: [long_slow, short_slow]}        # Inconclusive ADF p 0.1219   KPSS p 0.1000   LB p 0.0000  CV 0.141  
+  - {name: daily_week_of_year_sin, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY [-1,1]
+  - {name: daily_week_of_year_cos, role: model, enabled: false, models: [long_slow, short_slow]} # STATIONARY [-1,1]
+  - {name: daily_quarter, role: model, enabled: false, models: [long_slow, short_slow]}          # STATIONARY [0,1]
+
+  # --- TimesFM forecast (daily direction → slow models + daily_tfm_mean_2 as fast context) ---
+  # Horizon is encoded in the feature-name suffix (daily = 2 daily bars ≈ 144 M15 bars).
+  - {name: daily_tfm_mean_2,   role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY macro direction for all models
+  - {name: daily_tfm_q10_2,    role: model, enabled: false, models: [long_slow, short_slow]}                          # STATIONARY lower bound
+  - {name: daily_tfm_q90_2,    role: model, enabled: false, models: [long_slow, short_slow]}                          # STATIONARY upper bound
+  - {name: daily_tfm_spread_2, role: model, enabled: false, models: [long_slow, short_slow]}                          # STATIONARY uncertainty
+  - {name: daily_tfm_conf_2,   role: model, enabled: false, models: [long_fast, short_fast]}               # STATIONARY optional confidence score
+
+  # --- ML regime model (HMM/GMM/KMeans latent states → daily macro context) ---
+  # Precomputed by data/update_regime_model_data.py (data/regime_daily.csv); live
+  # inference recomputes from the persisted model. Number of prob_s* columns must
+  # equal parameters.rgm_n_states. All disabled until the model is fitted/evaluated.
+  - {name: daily_rgm_prob_s0,    role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY [0,1] state posterior
+  - {name: daily_rgm_prob_s1,    role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY [0,1]
+  - {name: daily_rgm_prob_s2,    role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY [0,1]
+  - {name: daily_rgm_prob_s3,    role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY [0,1]
+  - {name: daily_rgm_label,      role: model, enabled: true, models: [long_slow, short_slow, long_fast, short_fast]}                          # STATIONARY {0..k-1} discrete state
+  - {name: daily_rgm_trend_score, role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]} # STATIONARY [-1,1] signed trend intensity
+  - {name: daily_rgm_vol_score,  role: model, enabled: false, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY [0,1] volatility level
+  - {name: daily_rgm_conf,       role: model, enabled: true, models: [long_slow, short_slow, long_fast, short_fast]}                          # STATIONARY [0,1] posterior confidence
+
+  # ===========================================================================
+  # CROSS-TIMEFRAME FEATURES (mtf_* — computed AFTER the per-timeframe merge)
+  # Calculated by indicators.add_cross_timeframe_features() on the combined
+  # M15-aligned frame (advanced_train / train.py / feature_server), NOT inside
+  # a per-timeframe add_features() pass. Sources already carry their own shift.
+  # ===========================================================================
+
+  # Multi-timeframe trend agreement: mean(tanh(slope/scale)) over the three
+  # ATR-normalised regression slopes in parameters.mtf_trend_slope_sources.
+  # [-1,1]: +1 = all timeframes trending up, -1 = all down, ~0 = disagreement.
+  # Requires its source trend_slope features enabled (model or helper role).
+  # Screen 2026-09-02 (2014-2026, 36.6k sampled bars, 43 active features):
+  # corr 0.81/0.83 (pearson/spearman) vs daily_bb_deviation — AT the 0.80
+  # redundancy threshold; the sources pairwise correlate only 0.03-0.26, so the
+  # aggregation is real, but the aggregate lands on information the model
+  # already holds. Stays disabled per protocol (screen -> audit -> A/B).
+  #
+  # The three sources are REQUIRED whenever mtf_trend_agreement is enabled —
+  # without them the column is all-NaN and the data alignment drops every row.
+  # role: helper keeps them out of the pruned model sets: only the aggregate
+  # enters the models, the raw slopes are computed but not fed to XGBoost.
+  - {name: m15_trend_slope_96, role: helper}      # OLS slope over 96 bars (1 day) / ATR
+  - {name: 4hours_trend_slope_30, role: helper}   # OLS slope over 30 bars (1 week) / ATR
+  - {name: daily_trend_slope_20, role: helper}    # OLS slope over 20 bars (~1 month) / ATR
+  - {name: mtf_trend_agreement, role: model, enabled: true, models: [long_slow, short_slow, long_fast, short_fast]}  # STATIONARY [-1,1]
+
+  # ===========================================================================
+  # EXTERNAL-SOURCED DAILY FEATURES (loaded from CSV via update_external_data.py)
+  # All currently disabled (pruned: macro < trend; each drops a CSV dependency).
+  # ===========================================================================
+
+
+  # --- paper-reported features (2026-08-29 candidate screen) ---
+  # Seven features reported as top importance in an external paper. Added disabled; the
+  # screening protocol is redundancy check -> information_audit -> only then a model arm.
+  # IMPORTANCE IS NOT OOS EVIDENCE: measured the same day, rate_diff_10y_chg20_z250 took
+  # 3.15% of XGBoost gain and then returned -33.4 EUR/trade over 36 walk-forward runs.
+  # bb_pband from the paper already exists here as {tf}_bb_percent.
+  # Raw hl_range / oc_range / log_return are NON-STATIONARY in price units (EUR/USD ran
+  # 0.95-1.60 with ~3x volatility drift), so they enter ATR-normalised.
+  - {name: daily_adx_pos, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY [0,100] +DI, the direction ADX discards
+  - {name: daily_adx_neg, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY [0,100] -DI
+  - {name: daily_cci, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY self-normalised by mean deviation
+  - {name: daily_channel_pos_10, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY [0,1] Donchian position
+  - {name: daily_hl_range_atr, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY bar range / ATR
+  - {name: daily_oc_range_atr, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY signed (close-open) / ATR
+  - {name: daily_log_return_atr_1, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY 1-bar log return / ATR
+
+  # --- COT (CFTC Commitment of Traders) — data/cot_eur_futures.csv ---
+  - {name: daily_cot_net_position, role: model, external: true, enabled: false, models: [long_slow, short_slow]}  # STATIONARY ~[-1,1]
+  - {name: daily_cot_net_change, role: model, external: true, enabled: false, models: [long_slow, short_slow]}    # STATIONARY
+  - {name: daily_cot_index, role: model, external: true, enabled: false, models: [long_slow, short_slow]}         # STATIONARY [0,100]
+
+  # --- VIX (CBOE Volatility Index) — data/vix_daily.csv ---
+  - {name: daily_vix_level, role: model, external: true, enabled: false, models: [long_slow, short_slow]}       # PARTIAL
+  - {name: daily_vix_1d_change, role: model, external: true, enabled: false, models: [long_slow, short_slow]}   # STATIONARY
+  - {name: daily_vix_percentile, role: model, external: true, enabled: false, models: [long_slow, short_slow]}  # STATIONARY [0,100]
+
+  # --- US Treasury Yields (FRED) — data/us_yields_daily.csv ---
+  # NOTE: us_yield_spread is DGS10-DGS2, the US yield CURVE SLOPE. It is NOT a
+  # cross-country differential — that is rate_diff_* below.
+  - {name: daily_us_10y_yield, role: model, external: true, enabled: false, models: [long_slow, short_slow]}    # NON-STATIONARY
+  - {name: daily_us_yield_spread, role: model, external: true, enabled: false, models: [long_slow, short_slow]} # PARTIAL
+
+  # --- Interest-rate differential (FRED DGS2/DGS10 + ECB euro-area AAA spot curve) ---
+  # data/us_yields_daily.csv + data/eur_yields_daily.csv, differenced and z-scored in
+  # external_data.get_external_df(). US minus EUR, so positive = USD-favourable, the same
+  # sign convention as carry_diff.
+  #
+  # Added 2026-08-29. Before that the data set contained NO euro-area market rate, so the
+  # variable FX theory actually points at could not be formed at all.
+  #
+  # STATIONARITY (measured, not assumed — see the table in external_data.get_external_df):
+  #   * The raw LEVELS have a unit root (Dickey-Fuller t -1.55 / -2.01 against a -2.86
+  #     critical value, AC(1) 0.999) and their mean shifts with the monetary regime:
+  #     rate_diff_2y averages 0.01 in 2005-2011, 1.30 in 2012-2021, 1.90 in 2022-2026.
+  #     A split at "> 1.0" means something different in 2008 than in 2024. NOT usable
+  #     as model inputs -> role: helper.
+  #   * The raw CHANGES are stationary in mean (DF t -18 to -38) but their volatility
+  #     differs by 1.7-2.1x between the ZLB years and the hiking cycles. Also helpers.
+  #   * The causal trailing z-scores (_z250) are what a model gets: DF t -1.55 -> -5.29
+  #     for the level, per-era volatility ratio 3.1 -> 1.0 and 1.7 -> 1.1.
+  - {name: daily_rate_diff_2y, role: helper, external: true}                # NON-STATIONARY level, unit root
+  - {name: daily_rate_diff_2y_chg5, role: helper, external: true}           # PARTIAL: mean-stationary, heteroskedastic
+  - {name: daily_rate_diff_2y_chg20, role: helper, external: true}          # PARTIAL
+  - {name: daily_rate_diff_10y, role: helper, external: true}               # NON-STATIONARY level, unit root
+  - {name: daily_rate_diff_10y_chg5, role: helper, external: true}          # PARTIAL
+  - {name: daily_rate_diff_10y_chg20, role: helper, external: true}         # PARTIAL
+  # Model inputs: causal trailing z-scores (250 business days), enabled in
+  # features-ratediff.yaml (arm B of the rate-differential study).
+  - {name: daily_rate_diff_2y_z250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}        # STATIONARY level vs own year
+  - {name: daily_rate_diff_2y_chg5_z250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}   # STATIONARY 5-day repricing
+  - {name: daily_rate_diff_2y_chg20_z250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}  # STATIONARY 20-day repricing
+  - {name: daily_rate_diff_10y_z250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}       # STATIONARY
+  - {name: daily_rate_diff_10y_chg20_z250, role: model, external: true, enabled: false, models: [long_slow, short_slow]} # STATIONARY
+  # --- Carry (FRED ECBDFR + DFF) — data/us_yields_daily.csv ---
+  - {name: daily_carry_diff, role: model, external: true, enabled: false, models: [long_slow, short_slow]}       # PARTIAL policy-rate differential DFF-ECBDFR (+ = USD-favorable)
+  - {name: daily_carry_diff_chg20, role: model, external: true, enabled: false, models: [long_slow, short_slow]} # STATIONARY 20-bday carry change (carry momentum)
+
+  # --- DXY (US Dollar Index) — data/dxy_daily.csv ---
+  - {name: daily_dxy_level, role: model, external: true, enabled: false, models: [long_slow, short_slow]}      # PARTIAL
+  - {name: daily_dxy_1d_change, role: model, external: true, enabled: false, models: [long_slow, short_slow]}  # STATIONARY
+  - {name: daily_dxy_zscore_20, role: model, external: true, enabled: false, models: [long_slow, short_slow]}  # STATIONARY
+
+  # --- ES (S&P 500 Futures) — data/es_daily.csv ---
+  - {name: daily_es_1d_change, role: model, external: true, enabled: false, models: [long_slow, short_slow]}   # STATIONARY
+  - {name: daily_es_zscore_20, role: model, external: true, enabled: false, models: [long_slow, short_slow]}   # STATIONARY
+
+  # --- Cross-asset currency strength — data/cross_asset_daily.csv ---
+  # Built by data/update_cross_asset_data.py from nine OTHER pairs (EURUSD excluded from
+  # the decomposition), features/cross_asset.py. Price-derived but NOT derivable from
+  # EURUSD's own history — the family the information audit could not previously contain.
+  # Redundancy screen 2026-09-02 (analytics/redundancy_screen.py): the three 60-day
+  # spread variants correlate 0.86-0.94 with daily_momentum_xlong (the relative motion of
+  # the pair's own two legs at its own horizon IS mostly the pair's momentum) and are
+  # deliberately NOT defined here. Enabled only if the pre-registered audit passes
+  # (preregistration.md A4); until then enabled: true documents the family.
+  # Panel coverage: 2007-01 .. 2023-02 + partial 2026 (export gap; staleness-guarded).
+  - {name: daily_ccy_rank_spread_250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}  # STATIONARY [-1,1] rank(EUR)-rank(USD), 250d
+  - {name: daily_ccy_spread_z_250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}     # PARTIAL cross-sectional z, keeps magnitude
+  - {name: daily_ccy_eur_rank_250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}     # STATIONARY [0,1]
+  - {name: daily_ccy_usd_rank_250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}     # STATIONARY [0,1]
+  - {name: daily_ccy_usd_breadth_250, role: model, external: true, enabled: false, models: [long_slow, short_slow]}  # STATIONARY [0,1] share of ccys USD beats
+  - {name: daily_ccy_eur_rank_60, role: model, external: true, enabled: false, models: [long_slow, short_slow]}      # STATIONARY [0,1]
+  - {name: daily_ccy_usd_breadth_60, role: model, external: true, enabled: false, models: [long_slow, short_slow]}   # STATIONARY [0,1]; borderline screen 0.80 vs momentum_xlong
+  - {name: daily_ccy_dispersion_pct, role: model, external: true, enabled: false, models: [long_slow, short_slow]}   # STATIONARY [0,1] cross-ccy dispersion percentile (regime-like)
+
+# ===========================================================================
+# Feature calculation parameters
+# ===========================================================================
+
+  # ===========================================================================
+  # EVENT-SEQUENCE DIRECTION FAMILY (pre-registration A5, added 2026-09-07).
+  # Signed continuous event scores (0 = event absent), tested ONLY inside
+  # trend / high-vol regimes; single primitives are helpers and never scored.
+  # ALL DISABLED pending the screening protocol (redundancy screen -> event
+  # direction audit -> A/B). Roster: analytics/event_sequence_catalog.py.
+  # ===========================================================================
+  - {name: m15_impulse_burst_3_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY n-bar body sum x efficiency gate /ATR
+  - {name: m15_breakout_close_5_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY fresh Donchian close-break, signed depth/ATR
+  - {name: m15_volspike_body_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY range>=k*ATR + dominant body, signed range/ATR
+  - {name: m15_squeeze_breakout_10_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY compression (width pctile) -> range break, signed depth/ATR
+  - {name: m15_hh_thrust_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY HH/LL increment in top pctile + confirming body
+  - {name: m15_run_momentum_3_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY >=r same-direction closes -> r-bar move/ATR
+  - {name: m15_break_retest_5_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY break -> retest touch -> resumption close, signed
+  - {name: m15_micro_burst_4_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY near-unanimous bodies over n bars, >=1 ATR total
+  - {name: m15_volshift_bias_5_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY ATR(f)/ATR(w)-1 expansion x slope sign
+  - {name: m15_range_imbalance_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY up-vs-down bar-range share [-1,1], gated
+  - {name: m15_tick_imbalance_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY volume-weighted imbalance — TRAINING-ONLY (live-NaN, no volume in Java payload)
+  - {name: m15_failed_break_reversal_5_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY break that closed back inside, signed against break
+  - {name: m15_spike_wick_reversal_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY range spike + dominant wick, fades wick side
+  - {name: m15_impulse_london_3_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY impulse_burst x London session (clock unshifted)
+  - {name: m15_compression_spread_10_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY squeeze + spread-z widening — TRAINING-ONLY (live-NaN, needs mid)
+  - {name: m15_jump_reversion_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY fade a 1-bar move >= k*ATR
+  - {name: m15_jump_burst_follow_3_20, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY jump n bars ago + unanimous follow-through, rides it
+  - {name: 4hours_impulse_burst_2_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY n-bar body sum x efficiency gate /ATR
+  - {name: 4hours_breakout_close_3_10, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY fresh Donchian close-break, signed depth/ATR
+  - {name: 4hours_volspike_body_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY range>=k*ATR + dominant body, signed range/ATR
+  - {name: 4hours_squeeze_breakout_6_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY compression (width pctile) -> range break, signed depth/ATR
+  - {name: 4hours_run_momentum_3_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY >=r same-direction closes -> r-bar move/ATR
+  - {name: 4hours_break_retest_3_10, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY break -> retest touch -> resumption close, signed
+  - {name: 4hours_volshift_bias_3_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY ATR(f)/ATR(w)-1 expansion x slope sign
+  - {name: 4hours_failed_break_reversal_3_10, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY break that closed back inside, signed against break
+  - {name: 4hours_spike_wick_reversal_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY range spike + dominant wick, fades wick side
+  - {name: 4hours_jump_reversion_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY fade a 1-bar move >= k*ATR
+  - {name: daily_breakout_close_5_55, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY fresh Donchian close-break, signed depth/ATR
+  - {name: daily_squeeze_breakout_10_20, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY compression (width pctile) -> range break, signed depth/ATR
+  - {name: daily_volspike_body_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY range>=k*ATR + dominant body, signed range/ATR
+  - {name: daily_spike_wick_reversal_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY range spike + dominant wick, fades wick side
+  - {name: daily_run_momentum_3_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY >=r same-direction closes -> r-bar move/ATR
+  - {name: daily_volshift_bias_5_20, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY ATR(f)/ATR(w)-1 expansion x slope sign
+  - {name: daily_jump_reversion_20, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY fade a 1-bar move >= k*ATR
+  - {name: daily_news_impulse_14, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY >=2 HIGH-impact EUR/USD events on prev bar day x its impulse; NaN outside calendar
+  - {name: daily_range_pctile_10_20, role: helper, enabled: false}  # helper: A5 mtf source, never audited
+  - {name: daily_atr_ratio_5_20, role: helper, enabled: false}  # helper: A5 mtf source, never audited
+  - {name: mtf_breakout_h4_bias, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY m15 breakout gated on 4h slope sign agreement (cross-TF)
+  - {name: mtf_daily_squeeze_h4_expand, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY 4h breakout while daily range pctile <= 20 (cross-TF)
+  - {name: mtf_daily_volshift_h4_bias, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY daily ATR expansion x 4h slope sign (cross-TF)
+
+  # ===========================================================================
+  # CALENDAR DIRECTION FAMILY (pre-registration A6, added 2026-09-07).
+  # Event-anchored directionality around scheduled FED/ECB decisions: dense
+  # schedule clocks (timestamp-only, no shift - pre-published calendar) and
+  # sparse event-window scores (0 outside T-3..T+3, price parts shift(1)).
+  # ALL DISABLED pending the screening protocol (redundancy screen -> event
+  # direction audit -> A/B). Roster: analytics/calendar_direction_catalog.py.
+  # If ever enabled: calendar_events.py + the fxstreet CSV become live
+  # runtime artefacts (stage_jforex.ps1 allowlists must include both).
+  # ===========================================================================
+  - {name: m15_fed_prox_intraday, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY 1/(1+hours-to-FED/24), published decision time
+  - {name: m15_ezb_prox_intraday, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY 1/(1+hours-to-ECB/24)
+  - {name: m15_fed_day_momo_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY decision-day trailing 1d ret/ATR (shift(1))
+  - {name: m15_ezb_day_momo_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY decision-day trailing 1d ret/ATR
+  - {name: m15_fed_pre_momo_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY T-3..T-1 trailing 1d ret/ATR (continuation vs reversion)
+  - {name: m15_ezb_pre_momo_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY T-3..T-1 trailing 1d ret/ATR
+  - {name: m15_fed_pre_squeeze_96_1920, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY pre-FED compression -> signed nascent move
+  - {name: m15_ezb_pre_squeeze_96_1920, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY pre-ECB compression -> signed nascent move
+  - {name: m15_nfp_friday_momo_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY first-Friday proxy (no NFP in export) x trailing ret
+  - {name: 4hours_fed_pre_ramp, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY graded proximity in T-3..T-1, 0 outside
+  - {name: 4hours_ezb_pre_ramp, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY graded proximity in T-3..T-1
+  - {name: 4hours_fed_post_ramp, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY graded recency in T+1..T+3
+  - {name: 4hours_ezb_post_ramp, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY graded recency in T+1..T+3
+  - {name: 4hours_fed_pre_momo_6, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY T-3..T-1 trailing 6-bar ret/ATR
+  - {name: 4hours_ezb_pre_momo_6, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY T-3..T-1 trailing 6-bar ret/ATR
+  - {name: 4hours_fed_post_cont_6, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY T+1..T+3 trailing 6-bar ret/ATR
+  - {name: 4hours_ezb_post_cont_6, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY T+1..T+3 trailing 6-bar ret/ATR
+  - {name: 4hours_fed_post_event_cont_20, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY decision-day return z on T+1..T+3 (warm-up under-provisioned: 20d std ~ 120 bars, leading NaN dropped)
+  - {name: 4hours_ezb_post_event_cont_20, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY decision-day return z on T+1..T+3
+  - {name: daily_fed_proximity, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY 1/(1+days-to-FED)
+  - {name: daily_ezb_proximity, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY 1/(1+days-to-ECB)
+  - {name: daily_fed_recency, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY 1/(1+days-since-FED)
+  - {name: daily_ezb_recency, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY 1/(1+days-since-ECB)
+  - {name: daily_fed_cycle_pos, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY since/(since+until), decision day = 1
+  - {name: daily_ezb_cycle_pos, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY since/(since+until)
+  - {name: daily_cb_convergence, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY fed minus ezb proximity (which clock is closer)
+  - {name: daily_cb_cycle_diff, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY fed minus ezb cycle position
+  - {name: daily_cb_news_density_2, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY scheduled HIGH EUR/USD events today+tomorrow
+
+  # ===========================================================================
+  # SESSION-ANCHOR FAMILY (pre-registration A7, added 2026-09-07).
+  # Intraday clock & session anchors: causal hour-of-day seasonality (trailing
+  # per-slot estimation, never a full-sample mean), Asia-range position at the
+  # London open, 16:00-London-fix / turn-of-month / weekday anchors. London/NY
+  # quantities in LOCAL time (DST-correct; transitions fall on weekends), the
+  # Asia window fixed at 00:00-07:00 UTC (Tokyo has no DST). Seasonal trailing
+  # ints count slot OCCURRENCES (~days/weeks), so the warm-up regex under-
+  # provisions them - leading NaNs are dropped by the complete-case filter
+  # (A6 post_event_cont precedent). ALL DISABLED pending the screening
+  # protocol (redundancy screen -> session audit -> A/B). Roster:
+  # analytics/session_anchor_catalog.py.
+  # ===========================================================================
+  - {name: m15_hour_seasonal_16_750, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY trailing slot Sharpe of next-16-bar ret, 750 same-slot days (London clock)
+  - {name: m15_dowhour_seasonal_16_150, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY dow x time-of-day slot Sharpe, 150 weekly occurrences
+  - {name: m15_day_ret_z_750, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY day move so far z-scored vs trailing same-time-of-day distribution
+  - {name: m15_asia_pos, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY ~[-1,1] close position in the completed Asia range (from 07:00 UTC)
+  - {name: m15_asia_break_dir_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY signed ATR-norm excursion beyond the Asia range, 0 inside
+  - {name: m15_asia_ret_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY completed Asia-session return / ATR
+  - {name: m15_london_first_hour_4, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY London 08-09 move / ATR, carried through the day from 09:00 London
+  - {name: m15_overnight_gap_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY first close of day vs prev day's last close / ATR
+  - {name: m15_day_range_pos, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-1,1] running position in the day's range so far (causal cummax/cummin)
+  - {name: m15_fix_proximity, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY 1/(1+hours to next 16:00 London fix)
+  - {name: m15_fix_momo_4, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY pre-fix hour (15-16 London) x trailing 1h ret/ATR
+  - {name: m15_fix_tom_momo_480, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY pre-fix window x last-2-weekday month-end x trailing 5d ret/ATR
+  - {name: m15_tom_pos, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY turn-of-month counter -2/-1/+1/+2 (pure weekday arithmetic), 0 outside
+  - {name: m15_week_pos, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,1] position in the trading week
+  - {name: m15_ny_open_momo_4, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY NY-open hour (08-09 New York) x trailing 1h ret/ATR
+  - {name: m15_friday_unwind_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY Friday >=16:00 London x trailing 1d ret/ATR
+  - {name: 4hours_slot_seasonal_6_750, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY trailing UTC-grid slot Sharpe of next-6-bar ret, 750 slot days
+  - {name: 4hours_dow_seasonal_6_750, role: model, enabled: false, models: [long_slow, short_slow]}  # STATIONARY trailing weekday slot Sharpe of next-6-bar ret (group-shift 6 = last week)
+
+  # ===========================================================================
+  # REALIZED-MOMENTS FAMILY (pre-registration A8, added 2026-09-07).
+  # Path asymmetry from gap-masked M15 log-returns: signed semivariance share
+  # (Patton/Sheppard signed jump variation, vol-normalised), realized
+  # skew/kurtosis (Amaya et al.), bipower jump share, wick path asymmetry,
+  # tail-count imbalance, intraday leverage effect. Windows are M15 bars
+  # (16=4h, 96=1d, 480=5d, 1920=20d); returns crossing a session gap are
+  # masked before any moment is formed. chg/z warm-ups need base+trailing
+  # bars, so the warm-up regex under-provisions them - leading NaNs are
+  # dropped by the complete-case filter (A6/A7 precedent). ALL DISABLED
+  # pending the screening protocol (redundancy screen -> A8 audits -> A/B).
+  # Roster: analytics/realized_moments_catalog.py.
+  # ===========================================================================
+  - {name: m15_rsv_diff_16, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-1,1] (RSV+ - RSV-)/RV over 4h of M15 returns
+  - {name: m15_rsv_diff_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-1,1] signed semivariance share, 1d window
+  - {name: m15_rsv_diff_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1] signed semivariance share, 5d window
+  - {name: m15_rsv_diff_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1] signed semivariance share, 20d window
+  - {name: m15_rskew_16, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY realized skewness sqrt(n)*S3/RV^1.5, 4h window (noisy by design, screen/audit decide)
+  - {name: m15_rskew_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY realized skewness, 1d window
+  - {name: m15_rskew_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY realized skewness, 5d window
+  - {name: m15_rskew_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY realized skewness, 20d window
+  - {name: m15_rkurt_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY realized kurtosis n*S4/RV^2, 5d window (no short-window kurtosis - microstructure noise)
+  - {name: m15_rkurt_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY realized kurtosis, 20d window
+  - {name: m15_jump_share_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,1] max(0, RV-BV)/RV vs bipower variation, 1d window
+  - {name: m15_jump_share_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [0,1] jump share, 5d window
+  - {name: m15_rsv_chg_96_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY delta of 1d rsv_diff over 5d (warm-up 96+480, under-provisioned)
+  - {name: m15_rsv_chg_480_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY delta of 5d rsv_diff over 20d
+  - {name: m15_rskew_chg_480_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY delta of 5d rskew over 20d
+  - {name: m15_jump_chg_96_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY delta of 1d jump share over 5d
+  - {name: m15_rsv_z_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal trailing z of 1d rsv_diff over 20d (warm-up 96+1920+1)
+  - {name: m15_rskew_z_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal trailing z of 1d rskew over 20d
+  - {name: m15_jump_z_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal trailing z of 1d jump share over 20d
+  - {name: m15_dvol_z_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal trailing z of 1d downside semivol ("bad vol" state; named ATR screen risk)
+  - {name: m15_rsv_pct_96_7680, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [0,100] percentile rank of 1d rsv_diff over 80d
+  - {name: m15_rskew_pct_480_7680, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [0,100] percentile rank of 5d rskew over 80d
+  - {name: m15_rskew_ts_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY skew term structure rskew_96 - rskew_1920
+  - {name: m15_wick_asym_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY rolling mean of (lower-upper) wick fraction, 1d window
+  - {name: m15_wick_asym_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY rolling mean of (lower-upper) wick fraction, 5d window
+  - {name: m15_jump_asym_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY (#r>2sigma - #r<-2sigma)/n tail-count imbalance, 5d window (warm-up ~2x480)
+  - {name: m15_levcorr_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY corr(r_lag1, |r|) intraday leverage effect, 5d window
+
+  # ===========================================================================
+  # A9 VOLUME-SPREAD MICROSTRUCTURE FAMILY (docs/preregistration.md A9)
+  # Dukascopy TICK volume (price updates/bar, NOT traded market volume) and the
+  # mid-derived spread 2*(ask_close - mid). TRAINING-ONLY: the live Java payload
+  # carries neither column, and advanced_train/train load the M15 CSV without
+  # keep_mid=True -- enabling any member requires keep_mid at the training load
+  # sites, PythonFeatureClient sending volume+mid and the stage_jforex.ps1
+  # allowlists. Volume levels drift ~14x across years and intraday seasonality
+  # spans ~18x, so every member is a slot-z (London-local 15-min slot, causal
+  # trailing baseline, group-shift 1), share, ratio or change -- never a level
+  # or cumulative sum. Zero-volume (0.90%) and stalled-spread (2.33%) bars are
+  # masked NaN. Slot-trailing integers count slot OCCURRENCES (~ trading days),
+  # so the warm-up regex under-provisions them (A7 precedent). ALL DISABLED
+  # pending the screening protocol (redundancy screen -> A9 audit -> A/B).
+  # Roster: analytics/volume_spread_catalog.py.
+  # ===========================================================================
+  - {name: m15_vz_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY per-bar log-tick-volume z vs causal same-slot baseline (250 occ ~ 1y)
+  - {name: m15_vz_ma_16_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY 4h mean of the volume-surprise z
+  - {name: m15_vz_ma_96_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY 1d mean of the volume-surprise z
+  - {name: m15_vimb_16, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-1,1] signed volume imbalance sum(sign(r)*vol)/sum(vol), 4h (normalised OBV slope)
+  - {name: m15_vimb_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-1,1] signed volume imbalance, 1d
+  - {name: m15_vimb_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1] signed volume imbalance, 5d
+  - {name: m15_vimb_chg_96_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY delta of 1d imbalance over 5d
+  - {name: m15_vimb_z_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal trailing z of 1d imbalance over 20d
+  - {name: m15_vconf_16_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY move_z(4h) x volume-surprise: volume-confirmed move vs volume-less move
+  - {name: m15_vconf_96_250, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY move_z(1d) x volume-surprise
+  - {name: m15_vpdiv_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-2,2] volume imbalance minus signed price efficiency (accumulation residual), 1d
+  - {name: m15_vwret_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY (vol-weighted mean return - mean return)/sigma, 1d
+  - {name: m15_amihud_z_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of log Amihud |r|/vol (1d) over 20d
+  - {name: m15_amihud_chg_96_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY delta of log Amihud (1d) over 5d
+  - {name: m15_sz_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY per-bar log-spread z vs causal same-slot baseline (stalled bars masked)
+  - {name: m15_sz_ma_16_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY 4h mean of the spread-surprise z
+  - {name: m15_sexp_16_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY spread expansion rate mean16/mean96 - 1
+  - {name: m15_spread_ratio_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY liquidity state mean96/mean1920 - 1
+  - {name: m15_roll_z_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of the Roll effective-spread estimator (1d) over 20d
+  - {name: m15_sconf_16_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY move_z(4h) x spread-surprise: move on widening spread = information event
+  - {name: m15_vrange_imb_96, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-1,1] volume at range top-quartile minus bottom-quartile, 1d
+  - {name: m15_vrange_imb_480, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1] volume at range extremes, 5d
+  - {name: m15_vshare_ldn_20, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY prev completed day's London volume share minus trailing 20d mean
+  - {name: m15_vshare_asia_20, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY prev completed day's Asia (00-07 UTC) volume share minus trailing 20d mean
+  - {name: m15_break_vol_20_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY sparse: fresh Donchian-20 break direction x volume surprise (0 = no break; naked break is A5-rejected)
+  - {name: m15_jump_vol_96_250, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY sparse: sign(r) x volume surprise on >2-sigma jump bars (0 = no jump)
+
+  # ===========================================================================
+  # A10 CROSS-PAIR LEAD-LAG & TRIANGLE-RESIDUAL FAMILY (docs/preregistration.md A10)
+  # Intraday (1-8h) information propagation from the nine additional pairs'
+  # M15 closes, joined at corrected UTC stamps (the pre-2026 export generation
+  # is stamped Europe/Berlin, the 2026 refill is UTC -- generation-aware fix in
+  # features/cross_pair_intraday.py; a missing pair bar is NaN, NEVER ffilled).
+  # NOT the closed A4 daily currency-strength family: no member is a daily
+  # cross-section, rank or level. EURUSD never enters a member except the three
+  # pre-registered exceptions (triangle residuals, causal lead-lag beta,
+  # correlation-breakdown state). TRAINING-ONLY: the live payload carries no
+  # pair data -- enabling requires a live pair-data plan (staging allowlists,
+  # feature-server wiring). Windows in M15 bars (4=1h, 16=4h, 32=8h, 96=1d,
+  # 480=5d, 1920=20d). ALL DISABLED pending the screening protocol
+  # (redundancy screen -> A10 audit incl. frozen-cell replication -> A/B).
+  # Roster: analytics/cross_pair_catalog.py.
+  # ===========================================================================
+  - {name: m15_tri_gbp_z_96, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of the GBP triangle residual log(EURUSD)-log(EURGBP)-log(GBPUSD) over 1d
+  - {name: m15_tri_gbp_chg_z_4_1920, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY causal z of the 1h residual change (= EUR-legs divergence via GBP)
+  - {name: m15_tri_gbp_chg_z_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of the 4h residual change
+  - {name: m15_tri_jpy_z_96, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of the JPY triangle residual log(EURUSD)-log(EURJPY)+log(USDJPY) over 1d
+  - {name: m15_tri_jpy_chg_z_4_1920, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY causal z of the 1h residual change (= EUR-legs divergence via JPY)
+  - {name: m15_tri_jpy_chg_z_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of the 4h residual change
+  - {name: m15_eurx_z_4_1920, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY cross-only EUR strength: mean per-pair causal z of 1h EURGBP/EURJPY returns
+  - {name: m15_eurx_z_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY cross-only EUR strength, 4h returns
+  - {name: m15_eurx_z_32_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY cross-only EUR strength, 8h returns
+  - {name: m15_usdb_4, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [-1,1] intraday USD breadth: mean sign of USD-positive 1h moves over 6 USD pairs (all 6 required)
+  - {name: m15_usdb_16, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1] intraday USD breadth, 4h moves
+  - {name: m15_usdb_32, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [-1,1] intraday USD breadth, 8h moves
+  - {name: m15_usdz_4_1920, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY intraday USD strength: mean per-pair causal z of USD-positive 1h returns
+  - {name: m15_usdz_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY intraday USD strength, 4h returns
+  - {name: m15_usdz_32_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY intraday USD strength, 8h returns
+  - {name: m15_usd_disp_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY cross-sectional std of the 6 signed z-returns (common factor vs idiosyncratic)
+  - {name: m15_llpred_gbp_480, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY causal lead-lag prediction: trailing beta(EURUSD_t ~ GBPUSD_(t-1)) read 1 bar back x latest GBPUSD move
+  - {name: m15_llpred_jpy_480, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY causal lead-lag prediction via USDJPY
+  - {name: m15_llpred_eurx_480, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY causal lead-lag prediction via the EURGBP/EURJPY composite
+  - {name: m15_corrbk_gbp_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [0,100] percentile of rolling 1d corr(EURUSD, GBPUSD) vs own 20d history (breakdown flag)
+  - {name: m15_corrbk_jpy_96_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY [0,100] percentile of rolling 1d corr(EURUSD, USDJPY)
+  - {name: m15_rvz_gbp_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of log 4h realized vol of GBPUSD (vol spillover condition)
+  - {name: m15_rvz_jpy_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of log 4h realized vol of USDJPY
+  - {name: m15_xcons_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY EURUSD-aligned cross consensus (eurx_z - usdz)/2, 4h
+  - {name: m15_xcons_32_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY EURUSD-aligned cross consensus, 8h
+  - {name: m15_risk_z_16_1920, role: model, enabled: false, models: [long_fast, short_fast, long_slow, short_slow]}  # STATIONARY causal z of the 4h AUDJPY return (intraday risk-on/off proxy)
+
+  # ===========================================================================
+  # B6 TIMING & EXECUTION FAMILY (added 2026-09-12).
+  # Timing (when to act) + execution (how to place/manage an order): vol shift,
+  # spread regime, liquidity impulse, microstructure break, maker queue proxy,
+  # adaptive SL/TP/trailing distances, round-trip cost floor. Bare fixed names,
+  # windows in the tx_* parameters (mtf/session precedent; keys avoid the
+  # warm-up regex suffixes ON PURPOSE - documented under-provisioning, leading
+  # NaNs fall to the complete-case filter). NOT direction candidates: the
+  # accompanying audit (analytics/timing_execution_audit.py) is regime/
+  # redundancy/timing-relevance only. spread_norm/spread_regime need mid,
+  # liq_impulse* needs tick volume (TRAINING-ONLY, the A9 constraint);
+  # queue_good/maker_ok/cost_floor_pips degrade documentedly without them.
+  # The execution members (maker_ok..cost_floor_pips) are EXECUTION-LAYER
+  # quantities served via feature_server's "execution" block - never intended
+  # as model inputs. ALL DISABLED. Roster: analytics/timing_execution_catalog.py.
+  # ===========================================================================
+  - {name: m15_vol_ratio, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY ATR(16)/ATR(96) volatility-shift level
+  - {name: m15_vol_shift_signal, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY robust causal z of log(vol_ratio) (trailing median/IQR, 480 bars)
+  - {name: m15_range_ratio, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY (0,1] 16-bar range / 96-bar range (compression state)
+  - {name: m15_micro_break, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY signed close-break of trailing Donchian(96) / ATR, 0 inside
+  - {name: m15_spread_norm, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY log(spread / trailing same-slot median) | needs mid (TRAINING-ONLY)
+  - {name: m15_spread_regime, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,1] causal pct rank of spread_norm over 20d | needs mid
+  - {name: m15_liq_impulse_score, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY volume slot-z minus spread slot-z | needs volume (TRAINING-ONLY)
+  - {name: m15_liq_impulse, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,1] causal pct rank of liq_impulse_score over 20d | needs volume
+  - {name: m15_queue_good, role: model, enabled: false, models: [long_fast, short_fast]}  # STATIONARY [0,1] maker queue proxy (calm vol + calm spread; degrades to vol-only)
+  - {name: m15_maker_ok, role: model, enabled: false, models: [long_fast, short_fast]}  # EXECUTION [0,1] maker suitability = queue_good x (1 - impulse pct)
+  - {name: m15_sl_pips, role: model, enabled: false, models: [long_fast, short_fast]}  # EXECUTION adaptive stop = clip(0.5 x 96-bar range pips, 15, 60)
+  - {name: m15_tp_pips, role: model, enabled: false, models: [long_fast, short_fast]}  # EXECUTION adaptive target = clip(0.5 x 96-bar range pips, 15, 150)
+  - {name: m15_trail_pips, role: model, enabled: false, models: [long_fast, short_fast]}  # EXECUTION vol trailing stop = clip(0.5 x 16-bar range pips, 8, 40)
+  - {name: m15_cost_floor_pips, role: model, enabled: false, models: [long_fast, short_fast]}  # EXECUTION round-trip cost: trailing median spread + 2x slippage + commission
+
+parameters:
+  volatility_period: 10
+
+  # Multi-timeframe trend agreement (mtf_trend_agreement) — combined-frame
+  # column names; scale: |slope/ATR| == scale maps to tanh(1) = 0.76. Keep it
+  # small: redundancy vs daily_bb_deviation rises with the scale (0.81 at 0.05
+  # -> 0.89 at 0.20).
+  mtf_trend_slope_sources: [m15_trend_slope_96, 4hours_trend_slope_30, daily_trend_slope_20]
+  mtf_agreement_scale: 0.05
+
+  # Moving average periods
+  ma_short: 30
+  ma_medium: 80
+  ma_institutional: 100
+  ma_long: 200
+
+  # Slope calculation
+  sma_30_slope_diff: 5
+  sma_80_slope_diff: 10
+
+  # Momentum periods
+  momentum_short: 5
+  momentum_medium: 10
+  momentum_long: 20
+  momentum_xlong: 60
+
+  # Oscillator periods
+  rsi_period: 14
+
+  # Regime metric periods
+  adx_period: 14
+  adx_threshold: 25
+  price_efficiency_period: 20
+  price_efficiency_threshold: 0.5
+  volatility_percentile_period: 14
+  volatility_percentile_lookback: 500
+  adx_percentile_period: 14
+  adx_percentile_lookback: 500
+
+  # TimesFM forecast parameters
+  # NOTE: the forecast horizon is NOT a parameter anymore — it is encoded in each
+  # tfm feature-name suffix (e.g. m15_tfm_mean_144, 4hours_tfm_mean_9, daily_tfm_mean_2).
+  tfm_context_length: 512
+  tfm_batch_size: 256
+  tfm_freq_m15: 0                      # 0 = high-frequency intraday
+  tfm_freq_4hours: 0
+  tfm_freq_daily: 1                    # 1 = daily
+  tfm_model_repo: "google/timesfm-2.5-200m-pytorch"
+
+  # ML regime-model parameters (data/update_regime_model_data.py).
+  # rgm_n_states must match the number of daily_rgm_prob_s* features above.
+  rgm_algo: hmm                        # hmm | gmm | kmeans
+  rgm_n_states: 3
+  rgm_seed: 42
+  rgm_obs_adx_period: 14               # observation-vector indicator periods
+  rgm_obs_efficiency_period: 20
+  rgm_obs_vol_period: 14
+  rgm_obs_vol_lookback: 252
+  rgm_realized_vol_period: 20
+
+  # Event-sequence family thresholds (A5). Windows live in the feature
+  # names; `<name>_<timeframe>` overrides the global default per timeframe.
+  impulse_min_efficiency: 0.6
+  volspike_min_ratio: 2.0
+  volspike_min_body_frac: 0.6
+  squeeze_max_pctile: 20.0
+  hh_thrust_min_pctile: 80.0
+  micro_burst_min_atr: 1.0
+  imbalance_min: 0.5
+  volshift_min: 0.25
+  retest_atr_frac: 0.25
+  spike_min_ratio: 2.0
+  spike_min_ratio_daily: 1.5
+  wick_min_frac: 0.6
+  jump_min_atr: 3.0
+  jump_min_atr_4hours: 2.5
+  jump_min_atr_daily: 1.5
+  compression_spread_min_z: 1.0
+  news_cluster_min: 2
+  # Calendar direction family (A6): event-window gate width, calendar days.
+  cb_window_days: 3
+  # Session-anchor family (A7): turn-of-month window (weekdays each side of
+  # the month boundary), min_periods fraction of seasonal trailing windows.
+  tom_window_days: 2
+  seasonal_min_frac: 0.3333333333
+  # Realized-moments family (A8): min_periods fraction of each moment window
+  # (valid gap-masked returns), tail threshold for jump_asym in trailing sigmas.
+  rm_min_frac: 0.75
+  rm_jump_z: 2.0
+  # Volume-spread family (A9): min_periods fraction of rolling windows,
+  # min same-slot occurrences fraction of the seasonal baselines, jump gate in
+  # trailing sigmas, vz averaging window at a Donchian break.
+  vs_min_frac: 0.75
+  vs_slot_min_frac: 0.4
+  vs_jump_z: 2.0
+  vs_break_ma: 4
+  # Cross-pair family (A10): min_periods fraction of RV/cov/corr windows.
+  xp_min_frac: 0.75
+  # Timing/execution family (B6): windows in M15 bars / slot occurrences
+  # (keys deliberately avoid the warm-up regex suffixes - see the module),
+  # execution clips are risk limits, cost constants from utils/costs.py.
+  tx_vol_fast: 16
+  tx_vol_slow: 96
+  tx_shift_span: 480
+  tx_pct_span: 1920
+  tx_break_span: 96
+  tx_slot_days: 60
+  tx_min_frac: 0.75
+  tx_slot_min_frac: 0.4
+  tx_sl_range_mult: 0.5
+  tx_sl_min_pips: 15.0
+  tx_sl_max_pips: 60.0
+  tx_tp_range_mult: 0.5
+  tx_tp_min_pips: 15.0
+  tx_tp_max_pips: 150.0
+  tx_trail_range_mult: 0.5
+  tx_trail_min_pips: 8.0
+  tx_trail_max_pips: 40.0
+  tx_slippage_pips: 0.2
+  tx_commission_per_million: 18.0
+  tx_fallback_spread_pips: 0.4
+  mtf_breakout_h4_bias_sources: [m15_breakout_close_5_20, 4hours_trend_slope_30]
+  mtf_daily_squeeze_h4_expand_sources: [4hours_breakout_close_3_10, daily_range_pctile_10_20]
+  mtf_daily_volshift_h4_bias_sources: [daily_atr_ratio_5_20, 4hours_trend_slope_30]
+  mtf_squeeze_max_pctile: 20.0

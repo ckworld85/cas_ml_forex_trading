@@ -1,0 +1,82 @@
+# Advanced Training Configuration
+# Controls feature selection and SHAP analysis parameters
+
+feature_selection:
+  # Mutual Information Pre-Filter
+  mutual_information:
+    enabled: true
+    min_mi: 0.001              # Minimum MI threshold (features below this are removed)
+    task: classification       # 'classification' or 'regression'
+    n_neighbors: 3             # Number of neighbors for MI estimation
+    
+  # Permutation Feature Importance
+  permutation_importance:
+    enabled: true
+    min_importance: -0.001     # Minimum importance threshold (small negative tolerance for sampling variance)
+    n_repeats: 10              # Number of permutation repeats
+    use_cv: true               # Use time-series CV for out-of-sample evaluation
+    n_cv_splits: 5             # Number of CV splits
+
+# Time-Series Cross-Validation
+cross_validation:
+  enabled: true
+  n_splits: 5                  # Number of time-series splits
+  
+# Regime Labels Configuration
+regime_detection:
+  enabled: true
+  
+  # Trend/Range Detection
+  trend:
+    adx_threshold: 25.0        # ADX above this = trend
+    efficiency_threshold: 0.5  # Price efficiency above this = trend
+    adx_period: 14             # Period for ADX calculation
+    
+  # Volatility Detection
+  volatility:
+    high_percentile: 70.0      # Above this percentile = high volatility
+    low_percentile: 30.0       # Below this percentile = low volatility
+    atr_period: 14             # Period for ATR calculation
+    lookback_period: 252       # Lookback for percentile calculation (252 = ~1 year for daily)
+
+# SHAP Analysis Configuration
+shap_analysis:
+  enabled: true
+  max_samples: 1000            # Maximum samples for global SHAP computation
+  max_samples_per_regime: 500  # Maximum samples per regime for regime-specific analysis
+  
+  # Plots to generate
+  plots:
+    summary_plot: true         # Beeswarm/summary plot
+    bar_plot: true             # Bar chart of feature importance
+    dependence_plots: true     # Dependence plots for top features
+    n_top_features: 5          # Number of top features for dependence plots
+    regime_comparison: true    # Cross-regime comparison plot
+    
+  # Per-regime analysis
+  regime_analysis:
+    enabled: true
+    regimes:
+      - trend
+      - range
+      - high_volatility
+      - low_volatility
+      - medium_volatility
+
+# Model Training Parameters (can be overridden via command line)
+model:
+  classifier:
+    max_depth: 6
+    eta: 0.1
+    objective: "binary:logistic"
+    eval_metric: logloss
+    num_boost_round: 200
+
+# Output Configuration
+output:
+  save_mi_scores: true
+  save_pfi_scores: true
+  save_selected_features: true
+  save_regime_labels: true
+  save_shap_values: false      # Can be large - disabled by default
+  save_plots: true
